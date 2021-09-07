@@ -5,21 +5,201 @@ output:
     keep_md: true
 ---
 
+## Loading and preprocessing the data  
+```{r Load_Libraries, results='hide'}
+# Load all necessary packages for this project
+x<-c("collapse", "Hmisc", "ggplot2")
+suppressMessages(suppressWarnings(
+lapply(x, require, character.only = TRUE, quietly = TRUE)
+))
+```  
 
-## Loading and preprocessing the data
+```{r Load_Data}
+# Create a temporary file to store the downloaded zip file
+fileUrl <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+temp <- tempfile()
+download.file(fileUrl, temp)
 
+# Get a list of the files in the zip file
+zipFiles <- unzip(zipfile = temp, list = TRUE)
 
+# Read in 'activity.csv' from the zip file using its index in zipFiles
+targetData <- read.csv(unz(temp, zipFiles$Name[1]), header = TRUE)
+
+# Convert date variable to date data type
+targetData$date <- as.Date(targetData$date)
+
+# Review data characteristics
+str(targetData)
+summary(targetData)
+```
 
 ## What is mean total number of steps taken per day?
+For this part of the assignment, you can ignore the missing values in the dataset.
 
+1. Calculate the total number of steps taken per day.
+```{r}
+# Calculate the total number of steps taken per day
+dailySteps.sum <- setNames(
+        aggregate(x = targetData$steps, by = list(targetData$date), FUN = sum),
+        c("date", "total_steps"))
 
+# Review data characteristics
+str(dailySteps.sum)
+summary(dailySteps.sum)
+```
+
+2. Make a histogram of the total number of steps taken each day.
+```{r Histogram_1}
+# Make a histogram of the total number of steps taken each day
+hist(dailySteps.sum$total_steps,
+     main = "Histogram of Total Steps per Day",
+     xlab = "Total Steps",
+     border = "blue", 
+     col = "green")
+```  
+
+3. Calculate and report the mean and median of the total number of steps taken
+per day.
+
+```{r}
+# Calculate and report the mean and median of the total number of steps taken
+# per day.
+
+# Aggregate mean and median steps by date simultaneously
+aggSteps <- setNames(
+        collap(targetData, steps ~ date, 
+               custom = list(fmean = "steps", fmedian = "steps"), 
+               give.names = FALSE), 
+        c("mean.steps", "median.steps", "date")
+)
+aggSteps[ , c(3, 1, 2)]
+```
 
 ## What is the average daily activity pattern?
+Make a time series plot (i.e. <font color = "red"> type = "l"</font>) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis).  
+```{r LinePlot_1}
+# Calculate average (i.e., mean) daily steps per 5-minute interval
+aggInterval <- setNames(
+        collap(targetData, steps ~ interval, 
+               custom = list(fmean = "steps"), 
+               give.names = FALSE), 
+        c("mean.steps", "interval")
+)
 
+# Plot the average daily steps per 5-minute interval
+with(aggInterval, plot(interval, log(mean.steps), type = "l",
+                       main = "Average Daily Steps per 5-minute Interval",
+                       ylab = "average daily steps")
+)  
+```
 
+Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps? `r aggInterval[aggInterval$mean.steps == max(aggInterval$mean.steps),2]`
+```{r}
+# Determine 5-minute interval with maximum number of steps across all days
+aggInterval[aggInterval$mean.steps == max(aggInterval$mean.steps),]
+```
 
 ## Imputing missing values
+Note that there are a number of days/intervals where there are missing values (coded as <font color = "red">NA</font>). The presence of missing days may introduce bias into some calculations or summaries of the data.  
 
+Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with <font color = "red">NAs</font>): `r sum(!complete.cases(targetData))`  
+```{r}
+# Calculate total number of rows with NA values
+sum(!complete.cases(targetData))
 
+# Alternative method of calculating individual rows with NA values
+sapply(targetData, function(x) sum(is.na(x)))
+```  
+
+Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+Create a new dataset that is equal to the original dataset but with the missing data filled in.  
+```{r}
+# Duplicate original data set
+targetData_NoNA <- targetData
+
+# Impute NA values in new data set using the median
+targetData_NoNA$steps <- with(targetData_NoNA, impute(steps, median))
+summary(targetData_NoNA)
+```
+Make a histogram of the total number of steps taken each day.  
+```{r Histogram_2}
+# Calculate the total number of steps taken per day
+dailySteps.sum_v2 <- setNames(
+        aggregate(x = targetData_NoNA$steps, by = list(targetData_NoNA$date), FUN = sum),
+        c("date", "total_steps"))
+# Make a histogram of the total number of steps taken each day
+hist(dailySteps.sum_v2$total_steps,
+     main = "Histogram of Total Steps per Day (No NAs)",
+     xlab = "Total Steps",
+     border = "blue", 
+     col = "green")
+```  
+
+Calculate and report the **mean** and **median** total number of steps taken per day.  
+```{r}
+# Calculate and report the mean and median of the total number of steps taken
+# per day.
+
+# Aggregate mean and median steps by date simultaneously
+aggSteps_v2 <- setNames(
+        collap(targetData_NoNA, steps ~ date, 
+               custom = list(fmean = "steps", fmedian = "steps"), 
+               give.names = FALSE), 
+        c("mean.steps", "median.steps", "date")
+)
+aggSteps_v2[ , c(3, 1, 2)]
+```
+Do these values differ from the estimates from the first part of the assignment?  
+<font color = "blue">Yes, these values differ.</font>  
+What is the impact of imputing missing data on the estimates of the total daily number of steps?  
+<font color = "blue">Imputing the data has a tendency to change the statistical characteristics of the data set (e.g., change the mean and quantile breakpoints).  
+
+More importantly, the null values resulted from full days without activity recorded rather than sporadic null values throughout a day at various 5-minute intervals; therefore, it would have been more prudent to simply eliminate the incomplete cases instead of imputing values into previously unrecorded days.</font>  
 
 ## Are there differences in activity patterns between weekdays and weekends?
+For this part the <font color = "red">weekdays()</font> function may be of some help here. Use the dataset with the filled-in missing values for this part.
+
+Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.  
+```{r}
+# Add new variable to data set without nulls
+targetData_NoNA$day.type <- weekdays(targetData_NoNA$date)
+
+# Identify weekends and update day.type variable
+targetData_NoNA$day.type[targetData_NoNA$day.type %in% c("Saturday", "Sunday")] <- "weekend"
+
+# Identify weekdays and update day.type variable
+targetData_NoNA$day.type[targetData_NoNA$day.type != "weekend"] <- "weekday"
+
+# Convert day.type variable to factor
+targetData_NoNA$day.type <- as.factor(targetData_NoNA$day.type)
+
+# Review data characteristics
+str(targetData_NoNA)
+summary(targetData_NoNA)
+```   
+
+Make a panel plot containing a time series plot (i.e. <font color = "red">type = "l"</font>) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.  
+```{r PanalPlot}
+# Calculate average (i.e., mean) weekday and weekend steps per 5-minute interval
+aggInterval.DayType <- setNames(
+        collap(targetData_NoNA, steps ~ interval + day.type, 
+               custom = list(fmean = "steps"), 
+               give.names = FALSE), 
+        c("mean.steps", "interval", "day.type")
+)
+# Set titles and labels
+myTitle <- expression("Average Daily Steps per 5-Minute Interval")
+mySubtitle <- expression("NOTE: The log("*bar(x)*") of steps used to normalize the y-axis")
+yLabel <- expression("Number of Steps")
+xLabel <- "Interval"
+myCaption <- expression("*median was used to impute missing values")
+
+# Graph average coal combustion emissions by year
+ggplot(aggInterval.DayType, aes(x = interval, y = log(mean.steps))) +
+        geom_line() +
+        facet_grid(day.type ~ .) +
+        labs(x = xLabel, y = yLabel, title = myTitle,
+             subtitle = mySubtitle, 
+             caption = myCaption) 
+```
